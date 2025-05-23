@@ -1,6 +1,79 @@
-# Code-RAG: Local Retrieval-Augmented Generation for Code Understanding
+# Code-RAG: Local Retrieval-Augmented Generation
 
-A local RAG (Retrieval-Augmented Generation) system that helps you understand and query your codebase using locally-run language models through a focused interactive chat interface.
+A local RAG (Retrieval-Augmented Generation) system that helps you understand and query your data using locally-run language models through a focused interactive chat interface.
+
+## How RAG Works
+
+**Retrieval-Augmented Generation (RAG)** combines information retrieval with text generation to answer questions using your own documents as context.
+
+```mermaid
+flowchart LR
+    subgraph INDEXING ["Indexing - One-time setup"]
+        FILES[Your Documents] --> CHUNK[Split into Chunks]
+        CHUNK --> EMBED[Convert to Vectors]
+        EMBED --> STORE[Store in Vector Database]
+    end
+    
+    subgraph QUERY ["Query - Every question"]
+        QUESTION[Your Question] --> QEMBED[Convert to Vector]
+        QEMBED --> SEARCH[Find Similar Chunks]
+        SEARCH --> CONTEXT[Retrieved Context]
+        CONTEXT --> LLM[Language Model]
+        LLM --> ANSWER[Generated Answer]
+    end
+    
+    subgraph DATABASE ["Vector Database"]
+        VECTORS[(Document Vectors)]
+        METADATA[(Chunk Metadata)]
+        SIMILARITY[Similarity Search Engine]
+    end
+    
+    STORE --> VECTORS
+    STORE --> METADATA
+    VECTORS --> SIMILARITY
+    METADATA --> SIMILARITY
+    SEARCH --> SIMILARITY
+    SIMILARITY --> CONTEXT
+    
+    %% Styling
+    classDef indexPhase fill:#e8f5e8,stroke:#4caf50,stroke-width:2px
+    classDef queryPhase fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    classDef dbPhase fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    
+    class FILES,CHUNK,EMBED,STORE indexPhase
+    class QUESTION,QEMBED,SEARCH,CONTEXT,LLM,ANSWER queryPhase
+    class VECTORS,METADATA,SIMILARITY dbPhase
+```
+
+### Two-Phase Process
+
+#### **Phase 1: Indexing (Setup)**
+1. **Split Documents**: Break your code/docs into manageable chunks
+2. **Create Embeddings**: Convert text chunks into numerical vectors (mathematical representations)
+3. **Store Vectors**: Save embeddings and metadata in a searchable vector database
+
+#### **Phase 2: Querying (Every Question)**
+1. **Embed Question**: Convert your question into the same vector format
+2. **Find Similar**: Search database for chunks most similar to your question using vector similarity
+3. **Retrieve Context**: Get the most relevant text chunks with their metadata
+4. **Generate Answer**: Feed question + context to LLM for a knowledgeable response
+
+### Our System Components
+
+| Component | Purpose | Example |
+|-----------|---------|---------|
+| **Indexer** | Finds and processes files | `traverse_directory()` |
+| **Chunker** | Splits documents intelligently | Smart Markdown chunker for `.md/.pdf` |
+| **Embedder** | Converts text to vectors | Sentence Transformers model |
+| **Database** | Stores and searches vectors | ChromaDB with similarity search |
+| **Generator** | Produces final answers | Ollama local LLM |
+
+### Why This Works
+
+- **Semantic Search**: Finds content by meaning, not just keywords
+- **Context-Aware**: LLM gets relevant information to answer accurately
+- **Scalable**: Works with large codebases efficiently
+- **Local**: Everything runs on your machine - private and fast
 
 ## Requirements
 

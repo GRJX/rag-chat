@@ -68,7 +68,7 @@ class Indexer:
         # Handle different file types
         try:
             if file_extension == '.pdf':
-                return self._extract_pdf_content_as_markdown(file_path) # Method name kept, implementation changes
+                return self._read_pdf_file(file_path) # Method name kept, implementation changes
             elif file_extension in ['.txt', '.md', '.py', '.js', '.java', '.html', '.css']:
                 return self._read_text_file(file_path)
             else:
@@ -94,7 +94,7 @@ class Indexer:
             except Exception:
                 raise
     
-    def _extract_pdf_content_as_markdown(self, file_path: Path) -> str:
+    def _read_pdf_file(self, file_path: Path) -> str:
         """
         Extract text content from a PDF file and convert it to Markdown
         using pymupdf4llm.
@@ -115,7 +115,7 @@ class Indexer:
                 
     def chunk_data(self, file_path: str, content: str) -> List[Dict[str, str]]:
         """
-        Split code into overlapping chunks.
+        Split content into overlapping chunks using smart chunking for markdown files.
         
         Args:
             file_path: The path of the file

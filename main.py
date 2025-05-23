@@ -7,7 +7,7 @@ from utils.indexer import Indexer
 from utils.embeddings import EmbeddingGenerator
 from utils.db_handler import ChromaDBHandler
 from utils.generator import OllamaGenerator
-from utils.config import N_RESULTS, VERBOSE, Colors
+from utils.config import N_RESULTS, VERBOSE, Colors, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING
 
 def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator: EmbeddingGenerator) -> None:
     """
@@ -150,12 +150,20 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
         print(f"{Colors.BLUE}Generating query embedding...{Colors.ENDC}")
         query_embedding = embedding_generator.generate_query_embedding(query)
         
-        print(f"{Colors.BLUE}Searching for top {N_RESULTS} relevant chunks...{Colors.ENDC}")
+        print(f"{Colors.BLUE}Searching for top {N_RESULTS} relevant chunks with quality filtering...{Colors.ENDC}")
         try:
-            results = db_handler.query(query_embedding, n_results=N_RESULTS)
+            # Use enhanced query with similarity filtering
+            results = db_handler.query(
+                query_embedding, 
+                n_results=N_RESULTS,
+                similarity_threshold=SIMILARITY_THRESHOLD,
+                min_chunk_size=MIN_CHUNK_SIZE,
+                rerank_by_section=bool(ENABLE_RERANKING),
+                prefer_headers=bool(ENABLE_RERANKING)
+            )
         except Exception as e:
             print(f"{Colors.RED}Unexpected error during query: {e}{Colors.ENDC}")
-            return ((_ for _ in [f"Error during query: {e}"]), [])  # Empty generator that yields only error message
+            return ((_ for _ in [f"Error during query: {e}"]), [])
         
         contexts = []
         if results and results.get('documents') and results['documents'][0]:
@@ -164,12 +172,15 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
                 results['metadatas'][0], 
                 results['distances'][0]
             )):
-                print(f"{Colors.GREEN}Match {i+1}: {metadata['file_path']} (Lines {metadata['start_line']}-{metadata['end_line']}) - Distance: {distance:.4f}{Colors.ENDC}")
+                # Use the database handler's similarity conversion
+                similarity = db_handler._convert_distance_to_similarity(distance)
+                
+                print(f"{Colors.GREEN}Match {i+1}: {metadata['file_path']} (Lines {metadata['start_line']}-{metadata['end_line']}) - Similarity: {similarity:.4f} (Distance: {distance:.4f}){Colors.ENDC}")
                 
                 # If verbose mode is enabled, print the chunk content
                 if VERBOSE == 1:
                     print(f"{Colors.GREY}\n--- Chunk Content ---")
-                    print(f"\t{doc}")  # Print full chunk content
+                    print(f"\t{doc}")
                     print(f"-------------------{Colors.ENDC}\n")
                     
                 contexts.append({
@@ -179,7 +190,7 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
                     'end_line': metadata['end_line'],
                 })
         else:
-            print(f"{Colors.YELLOW}No relevant chunks found for the query.{Colors.ENDC}")
+            print(f"{Colors.YELLOW}No high-quality chunks found for the query. Try lowering SIMILARITY_THRESHOLD.{Colors.ENDC}")
     else:
         print(f"{Colors.BLUE}Using cached contexts from initial query \"{initial_topic}\" (skipping RAG search)...{Colors.ENDC}")
 

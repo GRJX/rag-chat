@@ -33,6 +33,9 @@ CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "code_collection")
 
 # Retrieval configuration
 N_RESULTS = int(os.getenv("N_RESULTS", 5))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.7"))
+MIN_CHUNK_SIZE = int(os.getenv("MIN_CHUNK_SIZE", "50"))
+ENABLE_RERANKING = int(os.getenv("ENABLE_RERANKING", "1"))
 
 # Verbose output
 VERBOSE = int(os.getenv("VERBOSE", "0"))  # Convert string to int (0 or 1)
