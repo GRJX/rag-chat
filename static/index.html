@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chat</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 60% 40%;
+            height: 100vh;
+        }
+
+        /* ── Left: Chat ── */
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #1e1e32;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            background: #13131f;
+            border-bottom: 1px solid #1e1e32;
+            flex-shrink: 0;
+        }
+
+        .panel-header h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #8b7fff;
+            letter-spacing: -0.01em;
+        }
+
+        .btn-new {
+            background: transparent;
+            border: 1px solid #2e2e50;
+            color: #8888aa;
+            padding: 5px 13px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            transition: border-color .15s, color .15s;
+        }
+
+        .btn-new:hover {
+            border-color: #8b7fff;
+            color: #8b7fff;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            scroll-behavior: smooth;
+        }
+
+        .welcome {
+            align-self: center;
+            margin-top: 60px;
+            text-align: center;
+            color: #44445a;
+            font-size: 0.9rem;
+        }
+
+        .message {
+            max-width: 88%;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: #2b2863;
+            border-radius: 14px 14px 3px 14px;
+            padding: 11px 15px;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: #1a1a2e;
+            border: 1px solid #1e1e32;
+            border-radius: 3px 14px 14px 14px;
+            padding: 11px 15px;
+        }
+
+        .msg-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            margin-bottom: 6px;
+        }
+
+        .message.user .msg-label {
+            color: #8b7fff;
+        }
+
+        .message.assistant .msg-label {
+            color: #5b8fff;
+        }
+
+        .msg-content {
+            font-size: 0.92rem;
+            line-height: 1.65;
+            word-break: break-word;
+        }
+
+        /* markdown styles */
+        .msg-content p {
+            margin-bottom: .5em;
+        }
+
+        .msg-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .msg-content h1,
+        .msg-content h2,
+        .msg-content h3 {
+            margin: .6em 0 .3em;
+            font-size: 1em;
+            color: #c0c0ff;
+        }
+
+        .msg-content code {
+            background: #0d0d1a;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: 'Fira Code', 'Monaco', monospace;
+            font-size: .87em;
+        }
+
+        .msg-content pre {
+            background: #0d0d1a;
+            padding: 12px;
+            border-radius: 7px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .msg-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .msg-content ul,
+        .msg-content ol {
+            padding-left: 1.4rem;
+            margin: .4em 0;
+        }
+
+        .msg-content li {
+            margin-bottom: .2em;
+        }
+
+        .msg-content blockquote {
+            border-left: 3px solid #3a3a6a;
+            padding-left: 10px;
+            color: #8888aa;
+            margin: 6px 0;
+        }
+
+        .msg-content strong {
+            color: #d0d0ff;
+        }
+
+        .msg-content a {
+            color: #8b7fff;
+        }
+
+        .typing {
+            color: #44445a;
+            font-style: italic;
+            font-size: .9rem;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            padding: 14px 20px;
+            border-top: 1px solid #1e1e32;
+            background: #13131f;
+            flex-shrink: 0;
+        }
+
+        textarea#query-input {
+            flex: 1;
+            background: #1a1a2e;
+            border: 1px solid #2e2e50;
+            color: #e0e0e0;
+            border-radius: 8px;
+            padding: 9px 13px;
+            font-size: .92rem;
+            font-family: inherit;
+            resize: none;
+            min-height: 40px;
+            max-height: 140px;
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        textarea#query-input:focus {
+            border-color: #8b7fff;
+        }
+
+        .btn-send {
+            background: #8b7fff;
+            border: none;
+            color: #fff;
+            padding: 9px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: .92rem;
+            font-weight: 600;
+            height: 40px;
+            white-space: nowrap;
+            transition: background .15s;
+        }
+
+        .btn-send:hover {
+            background: #a090ff;
+        }
+
+        .btn-send:disabled {
+            background: #2e2e50;
+            cursor: not-allowed;
+        }
+
+        /* ── Right: Sources ── */
+        .sources-panel {
+            display: flex;
+            flex-direction: column;
+            background: #111120;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .sources-panel .panel-header {
+            justify-content: space-between;
+        }
+
+        .sources-panel .panel-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #7777aa;
+        }
+
+        .sources-subtitle {
+            font-size: .75rem;
+            color: #44445a;
+            margin-top: 3px;
+        }
+
+        .sources-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .source-counter {
+            font-size: .8rem;
+            color: #5555aa;
+            min-width: 44px;
+            text-align: center;
+        }
+
+        .btn-nav {
+            background: transparent;
+            border: 1px solid #2e2e50;
+            color: #8888aa;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            line-height: 1;
+            transition: border-color .15s, color .15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-nav:hover:not(:disabled) {
+            border-color: #8b7fff;
+            color: #8b7fff;
+        }
+
+        .btn-nav:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Single source view fills remaining height */
+        .source-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 14px;
+            min-height: 0;
+        }
+
+        .no-sources {
+            text-align: center;
+            color: #33334a;
+            padding: 40px 20px;
+            font-size: .88rem;
+        }
+
+        .source-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #1a1a2e;
+            border: 1px solid #1e1e32;
+            border-radius: 8px;
+            overflow: clip;
+            min-height: 0;
+        }
+
+        .source-card-header {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 9px 12px;
+            border-bottom: 1px solid #1e1e32;
+            flex-shrink: 0;
+        }
+
+        .source-badge {
+            background: #8b7fff;
+            color: #fff;
+            font-size: .72rem;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        .source-file {
+            flex: 1;
+            min-width: 0;
+            font-weight: 600;
+            font-size: .82rem;
+            color: #b0b0d0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .source-score {
+            font-size: .72rem;
+            color: #5a9f5a;
+            flex-shrink: 0;
+        }
+
+        .btn-open {
+            background: transparent;
+            border: 1px solid #2e2e50;
+            color: #7777aa;
+            padding: 2px 9px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: .72rem;
+            flex-shrink: 0;
+            transition: border-color .15s, color .15s;
+        }
+
+        .btn-open:hover {
+            border-color: #8b7fff;
+            color: #8b7fff;
+        }
+
+        .source-content {
+            flex: 1;
+            padding: 10px 12px;
+            font-size: .78rem;
+            line-height: 1.6;
+            color: #7777aa;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Fira Code', 'Monaco', monospace;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2e2e50;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3e3e70;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+
+        <!-- Left: Chat -->
+        <div class="chat-panel">
+            <div class="panel-header">
+                <h1>RAG Chat</h1>
+                <button class="btn-new" id="new-chat-btn">New Chat</button>
+            </div>
+            <div class="messages" id="messages">
+                <div class="welcome">Ask a question to get started.</div>
+            </div>
+            <div class="input-area">
+                <textarea id="query-input" placeholder="Ask a question…" rows="1"></textarea>
+                <button class="btn-send" id="send-btn">Send</button>
+            </div>
+        </div>
+
+        <!-- Right: Sources -->
+        <div class="sources-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Sources</h2>
+                    <div class="sources-subtitle" id="sources-subtitle">Sources will appear here</div>
+                </div>
+                <div class="sources-nav">
+                    <button class="btn-nav" id="prev-btn" disabled>&#8249;</button>
+                    <span class="source-counter" id="source-counter"></span>
+                    <button class="btn-nav" id="next-btn" disabled>&#8250;</button>
+                </div>
+            </div>
+            <div class="source-view" id="source-view">
+                <div class="no-sources">Ask a question to see the retrieved chunks.</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+    <script>
+        marked.setOptions({ breaks: true, gfm: true });
+
+        let isNewChat = true;
+        let isSending = false;
+        let allContexts = [];
+        let currentSourceIdx = 0;
+
+        const messagesEl = document.getElementById('messages');
+        const sourceView = document.getElementById('source-view');
+        const sourcesSubtitle = document.getElementById('sources-subtitle');
+        const sourceCounter = document.getElementById('source-counter');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const inputEl = document.getElementById('query-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // Auto-resize textarea
+        inputEl.addEventListener('input', () => {
+            inputEl.style.height = 'auto';
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+        });
+
+        inputEl.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!isSending) sendMessage(); }
+        });
+
+        sendBtn.addEventListener('click', () => { if (!isSending) sendMessage(); });
+
+        document.getElementById('new-chat-btn').addEventListener('click', () => {
+            fetch('/api/reset', { method: 'POST' });
+            messagesEl.innerHTML = '<div class="welcome">Ask a question to get started.</div>';
+            allContexts = [];
+            currentSourceIdx = 0;
+            sourceView.innerHTML = '<div class="no-sources">Ask a question to see the retrieved chunks.</div>';
+            sourcesSubtitle.textContent = 'Sources will appear here';
+            sourceCounter.textContent = '';
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+            isNewChat = true;
+        });
+
+        prevBtn.addEventListener('click', () => { if (currentSourceIdx > 0) showSource(currentSourceIdx - 1); });
+        nextBtn.addEventListener('click', () => { if (currentSourceIdx < allContexts.length - 1) showSource(currentSourceIdx + 1); });
+
+        // ── Helpers ──────────────────────────────────────────────────────────────
+
+        function esc(text) {
+            return String(text)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function addMessage(role, html) {
+            const placeholder = messagesEl.querySelector('.welcome');
+            if (placeholder) placeholder.remove();
+            const el = document.createElement('div');
+            el.className = `message ${role}`;
+            el.innerHTML = `<div class="msg-label">${role === 'user' ? 'You' : 'Assistant'}</div>
+                    <div class="msg-content">${html}</div>`;
+            messagesEl.appendChild(el);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return el;
+        }
+
+        function parseSSE(buffer) {
+            const events = [];
+            const parts = buffer.split('\n\n');
+            const remainder = parts.pop() ?? '';
+            for (const part of parts) {
+                if (!part.trim()) continue;
+                const ev = { type: 'message', data: '' };
+                for (const line of part.split('\n')) {
+                    if (line.startsWith('event: ')) ev.type = line.slice(7).trim();
+                    else if (line.startsWith('data: ')) ev.data = line.slice(6);
+                }
+                events.push(ev);
+            }
+            return { events, remainder };
+        }
+
+        function renderSources(contexts) {
+            allContexts = contexts || [];
+            currentSourceIdx = 0;
+            if (!allContexts.length) {
+                sourceView.innerHTML = '<div class="no-sources">No relevant sources found.</div>';
+                sourcesSubtitle.textContent = 'No sources found';
+                sourceCounter.textContent = '';
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+                return;
+            }
+            showSource(0);
+        }
+
+        function showSource(idx) {
+            currentSourceIdx = idx;
+            const ctx = allContexts[idx];
+            const total = allContexts.length;
+            const filename = ctx.file_path.split('/').pop();
+            const pct = Math.round((ctx.similarity || 0) * 100);
+
+            sourcesSubtitle.textContent = `${total} chunk${total !== 1 ? 's' : ''} retrieved`;
+            sourceCounter.textContent = `${idx + 1} / ${total}`;
+            prevBtn.disabled = idx === 0;
+            nextBtn.disabled = idx === total - 1;
+
+            sourceView.innerHTML = `
+                <div class="source-card">
+                    <div class="source-card-header">
+                        <span class="source-badge">${ctx.source_num}</span>
+                        <span class="source-file" title="${esc(ctx.file_path)}">${esc(filename)}</span>
+                        <span class="source-score">${pct}%</span>
+                        <button class="btn-open">&#8599; Open</button>
+                    </div>
+                    <div class="source-content">${esc(ctx.content)}</div>
+                </div>
+            `;
+
+            sourceView.querySelector('.btn-open').addEventListener('click', () => {
+                fetch(`/api/open-pdf?path=${encodeURIComponent(ctx.file_path)}`).catch(console.error);
+            });
+        }
+
+        // ── Main send ─────────────────────────────────────────────────────────────
+
+        async function sendMessage() {
+            const query = inputEl.value.trim();
+            if (!query || isSending) return;
+
+            isSending = true;
+            sendBtn.disabled = true;
+            inputEl.value = '';
+            inputEl.style.height = 'auto';
+
+            addMessage('user', esc(query));
+            const assistantEl = addMessage('assistant', '<span class="typing">Thinking…</span>');
+            const contentEl = assistantEl.querySelector('.msg-content');
+            let rawText = '';
+
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, reset: isNewChat }),
+                });
+
+                isNewChat = false;
+
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const { events, remainder } = parseSSE(buffer);
+                    buffer = remainder;
+                    for (const ev of events) {
+                        if (ev.type === 'contexts') {
+                            try { renderSources(JSON.parse(ev.data)); } catch (_) { }
+                        } else if (ev.type === 'token') {
+                            try {
+                                rawText += JSON.parse(ev.data);
+                                contentEl.innerHTML = marked.parse(rawText);
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            } catch (_) { }
+                        }
+                    }
+                }
+            } catch (err) {
+                contentEl.textContent = 'Error: ' + err.message;
+            } finally {
+                isSending = false;
+                sendBtn.disabled = false;
+                inputEl.focus();
+            }
+        }
+    </script>
+</body>
+
+</html>

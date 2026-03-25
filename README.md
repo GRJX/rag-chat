@@ -1,6 +1,6 @@
 # RAG-Chat: Local Retrieval-Augmented Generation
 
-A local RAG (Retrieval-Augmented Generation) system that helps you understand and query your PDF documents using locally-run language models through a focused interactive chat interface.
+A local RAG (Retrieval-Augmented Generation) system that helps you understand and query your PDF documents using locally-run language models. Includes both a CLI and a web interface with an inline source viewer.
 
 ## How RAG Works
 
@@ -66,11 +66,12 @@ flowchart LR
 
 | Component     | Purpose                        | Implementation                               |
 | ------------- | ------------------------------ | -------------------------------------------- |
-| **Indexer**   | Finds and converts PDF files   | `pymupdf4llm` → Markdown                     |
+| **Indexer**   | Finds and converts PDF files   | `pymupdf4llm` → Markdown with page tracking  |
 | **Chunker**   | Splits documents intelligently | Smart Markdown-aware chunker                 |
 | **Embedder**  | Converts text to vectors       | `qwen3-embedding:latest` via Ollama          |
 | **Database**  | Stores and searches vectors    | ChromaDB with cosine similarity              |
 | **Generator** | Produces final answers         | `gpt-oss:latest` via Ollama (high reasoning) |
+| **Web UI**    | Browser-based chat + sources   | FastAPI + SSE streaming                      |
 
 ## Requirements
 
@@ -108,11 +109,11 @@ All settings are managed via `src/.env`. Key options:
 | -------------------------- | ------------------------ | ------------------------------ |
 | `EMBEDDINGS_MODEL_NAME`    | `qwen3-embedding:latest` | Ollama embedding model         |
 | `LLM_MODEL_NAME`           | `gpt-oss:latest`         | Ollama LLM model               |
-| `LLM_MAX_TOKENS`           | `2000`                   | Max tokens per response        |
-| `CHUNK_SIZE`               | `1000`                   | Target chunk size (chars)      |
-| `CHUNK_OVERLAP`            | `200`                    | Overlap between chunks (chars) |
-| `N_RESULTS`                | `5`                      | Number of chunks to retrieve   |
-| `SIMILARITY_THRESHOLD`     | `0.7`                    | Minimum similarity score       |
+| `LLM_MAX_TOKENS`           | `32000`                  | Max tokens per response        |
+| `CHUNK_SIZE`               | `1500`                   | Target chunk size (chars)      |
+| `CHUNK_OVERLAP`            | `300`                    | Overlap between chunks (chars) |
+| `N_RESULTS`                | `15`                     | Number of chunks to retrieve   |
+| `SIMILARITY_THRESHOLD`     | `0.002`                  | Minimum similarity score       |
 | `CHROMA_PERSIST_DIRECTORY` | `chroma_db`              | Path to ChromaDB storage       |
 
 ## Usage
@@ -145,3 +146,18 @@ This starts a focused chat session:
 4. Conversation history is maintained throughout the session
 
 Type `exit`, `quit`, or press Ctrl+C to end the session.
+
+## Web Interface
+
+```bash
+uvicorn app:app --reload --port 8000
+```
+
+Open `http://localhost:8000` in your browser.
+
+The UI has two panels:
+
+- **Left (chat)** — streaming assistant responses with markdown rendering; Enter to send, Shift+Enter for newline; "New Chat" resets the session.
+- **Right (sources)** — one card per retrieved chunk showing filename, page number, similarity score, and the full chunk text. Click **↗ Open** to open the original PDF in your system viewer.
+
+Follow-up questions in the same session reuse the chunks retrieved for the initial question — no repeated retrieval.

@@ -34,11 +34,14 @@ class Indexer:
             Extracted text from the PDF in Markdown format
         """
         try:
-            # Convert PDF to Markdown using PyMuPDF4LLM
-            md_text = pymupdf4llm.to_markdown(str(file_path), table_strategy="lines")
-            return md_text
+            page_chunks = pymupdf4llm.to_markdown(str(file_path), page_chunks=True)
+            parts = []
+            for chunk in page_chunks:
+                page_num = chunk['metadata']['page'] + 1  # 1-based
+                parts.append(f"<!-- PAGE {page_num} -->\n{chunk['text']}")
+            return '\n\n'.join(parts)
         except Exception as e:
-            print(f"{Colors.RED}Error extracting text from PDF {file_path} using PyMuPDF4LLM: {e}{Colors.ENDC}")
+            print(f"{Colors.RED}Error extracting text from PDF {file_path}: {e}{Colors.ENDC}")
             return ""
                 
     def _chunk_markdown_content(self, file_path: str, content: str) -> List[Dict[str, str]]:
@@ -57,11 +60,22 @@ class Indexer:
         current_chunk_lines = []
         current_chunk_size = 0
         start_line = 1
-        
+        current_page = 1
+        chunk_start_page = 1
+
         i = 0
         while i < len(lines):
             line = lines[i]
-            
+
+            # Track page numbers from markers inserted during PDF extraction
+            if line.startswith('<!-- PAGE ') and line.endswith(' -->'):
+                try:
+                    current_page = int(line[10:-4])
+                except ValueError:
+                    pass
+                i += 1
+                continue
+
             # Check if we need to start a new chunk due to size
             if current_chunk_size > self.chunk_size and current_chunk_lines:
                 # Find a good breaking point
@@ -74,13 +88,15 @@ class Indexer:
                         'start_line': start_line,
                         'end_line': start_line + break_point - 1,
                         'content': chunk_content,
+                        'page_number': chunk_start_page,
                     })
-                    
+
                     # Calculate overlap
                     overlap_lines = self._calculate_markdown_overlap(current_chunk_lines[break_point:])
                     current_chunk_lines = overlap_lines
                     current_chunk_size = sum(len(line) + 1 for line in overlap_lines)
                     start_line = start_line + break_point - len(overlap_lines)
+                    chunk_start_page = current_page
                 else:
                     # Force break if no good point found
                     chunk_content = '\n'.join(current_chunk_lines)
@@ -89,10 +105,12 @@ class Indexer:
                         'start_line': start_line,
                         'end_line': start_line + len(current_chunk_lines) - 1,
                         'content': chunk_content,
+                        'page_number': chunk_start_page,
                     })
                     current_chunk_lines = []
                     current_chunk_size = 0
                     start_line = i + 1
+                    chunk_start_page = current_page
             
             # Handle different markdown elements
             if self._is_heading(line):
@@ -144,6 +162,7 @@ class Indexer:
                 'start_line': start_line,
                 'end_line': start_line + len(current_chunk_lines) - 1,
                 'content': chunk_content,
+                'page_number': chunk_start_page,
             })
         
         return chunks

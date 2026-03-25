@@ -15,6 +15,8 @@ class Colors:
 EMBEDDINGS_MODEL_NAME = os.getenv("EMBEDDINGS_MODEL_NAME", "qwen3-embedding:latest")
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gpt-oss:latest")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2000"))
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+LLM_TOP_P = float(os.getenv("LLM_TOP_P", "0.9"))
 LLM_SYSTEM_PROMPT = os.getenv("LLM_SYSTEM_PROMPT", "You are a helpful assistant.")
 
 # Indexing configuration

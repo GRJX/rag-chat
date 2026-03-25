@@ -1,13 +1,15 @@
 import ollama
 from typing import Dict, List, Generator, Any, Optional, Union
 
-from src.config import LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT
+from src.config import LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_TOP_P, LLM_SYSTEM_PROMPT
 
 
 class OllamaGenerator:
     def __init__(self):
         self.model_name = LLM_MODEL_NAME
         self.max_tokens = LLM_MAX_TOKENS
+        self.temperature = LLM_TEMPERATURE
+        self.top_p = LLM_TOP_P
         self.system_prompt = LLM_SYSTEM_PROMPT
         
     def construct_prompt(self, query: str, context_chunks: List[Dict[str, Any]], 
@@ -45,7 +47,7 @@ class OllamaGenerator:
         prompt_elements.append(f"Current Question: {query}")
         
         if context_chunks:
-            prompt_elements.append("Context (cite the source number(s) you used in your answer, e.g. [Source 1]):")
+            prompt_elements.append("Context (you MUST cite sources using square brackets only, e.g. [Source 1], never round brackets):")
             for i, chunk in enumerate(context_chunks, 1):
                 file_name = chunk['file_path'].split('/')[-1]
                 label = f"[Source {i}: {file_name}, lines {chunk['start_line']}-{chunk['end_line']}]"
@@ -71,6 +73,8 @@ class OllamaGenerator:
             "system": self.system_prompt,
             "options": {
                 "num_predict": self.max_tokens,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
                 "reasoning_effort": "high",
             }
         }
