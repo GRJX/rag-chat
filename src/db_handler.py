@@ -2,7 +2,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional, Any, Union
 
-from utils.config import CHROMA_COLLECTION_NAME, CHROMA_PERSIST_DIRECTORY, Colors
+from src.config import CHROMA_COLLECTION_NAME, CHROMA_PERSIST_DIRECTORY, Colors
 
 class ChromaDBHandler:
     def __init__(self):
