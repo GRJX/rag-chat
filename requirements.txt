@@ -1,6 +1,4 @@
 chromadb
-sentence-transformers
 ollama
 python-dotenv
-einops
 pymupdf4llm

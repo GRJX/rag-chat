@@ -1,17 +1,12 @@
 import ollama
-from typing import Dict, List, Generator, Any, Optional
+from typing import Dict, List, Generator, Any, Optional, Union
 
-from utils.config import LLM_MODEL_NAME, LLM_TEMPERATURE, LLM_TOP_P, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT
-from typing import Union
+from src.config import LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT
+
 
 class OllamaGenerator:
     def __init__(self):
-        """
-        Initialize the Ollama generator using environment configuration.
-        """
         self.model_name = LLM_MODEL_NAME
-        self.temperature = LLM_TEMPERATURE
-        self.top_p = LLM_TOP_P
         self.max_tokens = LLM_MAX_TOKENS
         self.system_prompt = LLM_SYSTEM_PROMPT
         
@@ -50,9 +45,11 @@ class OllamaGenerator:
         prompt_elements.append(f"Current Question: {query}")
         
         if context_chunks:
-            prompt_elements.append("Context:")
-            for chunk in context_chunks:
-                prompt_elements.append(chunk['content'])
+            prompt_elements.append("Context (cite the source number(s) you used in your answer, e.g. [Source 1]):")
+            for i, chunk in enumerate(context_chunks, 1):
+                file_name = chunk['file_path'].split('/')[-1]
+                label = f"[Source {i}: {file_name}, lines {chunk['start_line']}-{chunk['end_line']}]"
+                prompt_elements.append(f"{label}\n{chunk['content']}")
         
         return "\n\n".join(prompt_elements)
     
@@ -74,8 +71,7 @@ class OllamaGenerator:
             "system": self.system_prompt,
             "options": {
                 "num_predict": self.max_tokens,
-                "temperature": self.temperature,
-                "top_p": self.top_p
+                "reasoning_effort": "high",
             }
         }
         

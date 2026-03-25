@@ -1,45 +1,24 @@
 import argparse
 import uuid
-from typing import List, Dict, Any, Optional, Generator, Union, Tuple
-from pathlib import Path
+from typing import List, Dict, Any, Optional, Generator, Tuple
 
-from utils.indexer import Indexer
-from utils.embeddings import EmbeddingGenerator
-from utils.db_handler import ChromaDBHandler
-from utils.generator import OllamaGenerator
-from utils.config import N_RESULTS, VERBOSE, Colors, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING
+from src.indexer import Indexer
+from src.embeddings import EmbeddingGenerator
+from src.db_handler import ChromaDBHandler
+from src.generator import OllamaGenerator
+from src.config import N_RESULTS, VERBOSE, Colors, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING
 
 def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator: EmbeddingGenerator) -> None:
-    """
-    Index a codebase and store it in the database.
-    
-    Args:
-        directory: Directory containing the codebase
-        db_handler: ChromaDB handler instance
-        embedding_generator: Embedding generator instance
-    """
     indexer = Indexer()
-    
-    # Automatically detect supported file types in the directory
-    supported_extensions = indexer.get_supported_file_types()
-    discovered_files = discover_files_by_type(directory, supported_extensions)
-    
-    if not discovered_files:
-        print(f"{Colors.RED}No supported files found in {directory}{Colors.ENDC}")
-        return
-        
-    # Print summary of discovered files
-    for ext, count in discovered_files.items():
-        print(f"{Colors.GREEN}Found {count} {ext} files{Colors.ENDC}")
-    
+
     documents = []
     metadatas = []
     ids = []
     
     print(f"{Colors.BLUE}Traversing directory: {directory}{Colors.ENDC}")
     
-    # Process all file types with automatic handling
-    for file_path, content in indexer.traverse_directory(directory, auto_detect=True):
+    # Process all PDF files
+    for file_path, content in indexer.traverse_directory(directory):
         print(f"{Colors.BLUE}Processing file: {file_path}{Colors.ENDC}")
         chunks = indexer.chunk_data(file_path, content)
         
@@ -55,7 +34,7 @@ def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator:
             ids.append(chunk_id)
     
     if not documents:
-        print(f"{Colors.RED}No documents found to index. Please check the directory path.{Colors.ENDC}")
+        print(f"{Colors.RED}No PDF files found in {directory}.{Colors.ENDC}")
         return
         
     print(f"{Colors.BLUE}Generating embeddings for {len(documents)} chunks...{Colors.ENDC}")
@@ -98,26 +77,6 @@ def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator:
     
     print(f"{Colors.GREEN}Indexed {db_handler.collection_count()} chunks successfully{Colors.ENDC}")
 
-def discover_files_by_type(directory: str, supported_extensions: List[str]) -> Dict[str, int]:
-    """
-    Discover files by type in a directory.
-    
-    Args:
-        directory: Directory to search
-        supported_extensions: List of supported file extensions
-        
-    Returns:
-        Dictionary of file extensions and counts
-    """
-    result = {}
-    dir_path = Path(directory)
-    
-    for ext in supported_extensions:
-        files = list(dir_path.rglob(f"*{ext}"))
-        if files:
-            result[ext] = len(files)
-    
-    return result
 
 def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator: EmbeddingGenerator, 
                   generator: OllamaGenerator, chat_history: Optional[List[Dict[str, str]]] = None,
@@ -211,8 +170,8 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
     return (generator.generate(prompt, stream=True), contexts)
 
 def main():
-    parser = argparse.ArgumentParser(description="Local RAG system for code understanding")
-    parser.add_argument("--index", type=str, help="Directory to index")
+    parser = argparse.ArgumentParser(description="Local RAG system for PDF documents")
+    parser.add_argument("--index", type=str, help="Directory containing PDFs to index")
     parser.add_argument("--query", type=str, help="Initial query to start the chat")
     args = parser.parse_args()
     
@@ -225,7 +184,7 @@ def main():
         index_data(args.index, db_handler, embedding_generator)
     else:
         if db_handler.collection_count() == 0:
-            print(f"{Colors.RED}No documents indexed yet. Please index a codebase first with --index <directory>.{Colors.ENDC}")
+            print(f"{Colors.RED}No documents indexed yet. Please run with --index <directory> first.{Colors.ENDC}")
             return
         
         if not args.query:
@@ -256,8 +215,14 @@ def main():
             print(chunk, end="", flush=True)
             full_response += chunk
         print()  # Add newline after response
-        
-        # Add to chat history
+
+        # Print sources used for this response
+        if cached_contexts:
+            print(f"\n{Colors.GREY}Sources:")
+            for i, ctx in enumerate(cached_contexts, 1):
+                file_name = ctx['file_path'].split('/')[-1]
+                print(f"  [{i}] {file_name} (lines {ctx['start_line']}-{ctx['end_line']})")
+            print(Colors.ENDC, end="")
         chat_history.append({"role": "user", "content": args.query})
         chat_history.append({"role": "assistant", "content": full_response})
         
@@ -285,7 +250,15 @@ def main():
                     print(chunk, end="", flush=True)
                     full_response += chunk
                 print()  # Add newline after response
-                
+
+                # Print sources
+                if cached_contexts:
+                    print(f"\n{Colors.GREY}Sources:")
+                    for i, ctx in enumerate(cached_contexts, 1):
+                        file_name = ctx['file_path'].split('/')[-1]
+                        print(f"  [{i}] {file_name} (lines {ctx['start_line']}-{ctx['end_line']})")
+                    print(Colors.ENDC, end="")
+
                 # Update chat history
                 chat_history.append({"role": "user", "content": user_input})
                 chat_history.append({"role": "assistant", "content": full_response})
