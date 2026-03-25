@@ -2,3 +2,5 @@ chromadb
 ollama
 python-dotenv
 pymupdf4llm
+fastapi
+uvicorn

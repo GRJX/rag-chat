@@ -29,7 +29,8 @@ def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator:
             metadatas.append({
                 'file_path': chunk['file_path'],
                 'start_line': chunk['start_line'],
-                'end_line': chunk['end_line']
+                'end_line': chunk['end_line'],
+                'page_number': chunk.get('page_number', 1),
             })
             ids.append(chunk_id)
     
@@ -147,6 +148,8 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
                     'file_path': metadata['file_path'],
                     'start_line': metadata['start_line'],
                     'end_line': metadata['end_line'],
+                    'page_number': metadata.get('page_number', 1),
+                    'similarity': round(similarity, 4),
                 })
         else:
             print(f"{Colors.YELLOW}No high-quality chunks found for the query. Try lowering SIMILARITY_THRESHOLD.{Colors.ENDC}")
