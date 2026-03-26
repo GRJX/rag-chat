@@ -1,7 +1,9 @@
 import ollama
 from typing import Dict, List, Generator, Any, Optional, Union
 
-from src.config import LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_TOP_P, LLM_SYSTEM_PROMPT
+from src.config import (LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_TEMPERATURE, 
+                        LLM_TOP_P, LLM_TOP_K, LLM_PRESENCE_PENALTY, 
+                        LLM_FREQUENCY_PENALTY, LLM_SYSTEM_PROMPT)
 
 
 class OllamaGenerator:
@@ -10,6 +12,9 @@ class OllamaGenerator:
         self.max_tokens = LLM_MAX_TOKENS
         self.temperature = LLM_TEMPERATURE
         self.top_p = LLM_TOP_P
+        self.top_k = LLM_TOP_K
+        self.presence_penalty = LLM_PRESENCE_PENALTY
+        self.frequency_penalty = LLM_FREQUENCY_PENALTY
         self.system_prompt = LLM_SYSTEM_PROMPT
         
     def construct_prompt(self, query: str, context_chunks: List[Dict[str, Any]], 
@@ -75,6 +80,9 @@ class OllamaGenerator:
                 "num_predict": self.max_tokens,
                 "temperature": self.temperature,
                 "top_p": self.top_p,
+                "top_k": self.top_k,
+                "presence_penalty": self.presence_penalty,
+                "frequency_penalty": self.frequency_penalty,
                 "reasoning_effort": "high",
             }
         }
