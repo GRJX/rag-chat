@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+import time
 from typing import Optional
 
 import ollama
@@ -138,6 +139,8 @@ async def chat(request: ChatRequest):
         )
 
         full_response = ""
+        gen_start = time.perf_counter()
+        last_chunk = {}
         response_gen = await _async_client.generate(
             model=LLM_MODEL_NAME,
             prompt=prompt,
@@ -155,10 +158,30 @@ async def chat(request: ChatRequest):
             },
         )
         async for chunk in response_gen:
+            last_chunk = chunk
             token = chunk.get("response", "")
             if token:
                 full_response += token
                 yield f"event: token\ndata: {json.dumps(token)}\n\n"
+
+        gen_elapsed = time.perf_counter() - gen_start
+        metrics = {
+            "wall_time_s": round(gen_elapsed, 2),
+            "model": LLM_MODEL_NAME,
+            "prompt_tokens": last_chunk.get("prompt_eval_count", 0),
+            "completion_tokens": last_chunk.get("eval_count", 0),
+            "tokens_per_sec": round(
+                last_chunk.get("eval_count", 0)
+                / (last_chunk.get("eval_duration", 1) / 1e9), 1
+            ) if last_chunk.get("eval_duration") else 0,
+            "prompt_eval_ms": round(
+                last_chunk.get("prompt_eval_duration", 0) / 1e6
+            ),
+            "eval_ms": round(
+                last_chunk.get("eval_duration", 0) / 1e6
+            ),
+        }
+        yield f"event: metrics\ndata: {json.dumps(metrics)}\n\n"
 
         # Post-generation guardrail: validate citations
         validated = generator.validate_response(full_response, len(contexts))
