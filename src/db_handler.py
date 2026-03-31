@@ -1,3 +1,4 @@
+import re
 import chromadb
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional, Any, Union
