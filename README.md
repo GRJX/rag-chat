@@ -7,7 +7,7 @@ A local RAG (Retrieval-Augmented Generation) system that helps you understand an
 **Retrieval-Augmented Generation (RAG)** combines information retrieval with text generation to answer questions using your own documents as context.
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph INDEXING ["Indexing - One-time setup"]
         FILES[PDF Documents] --> MD[Convert to Markdown]
         MD --> CHUNK[Split into Chunks]
@@ -51,7 +51,7 @@ flowchart LR
 #### **Phase 1: Indexing (Setup)**
 
 1. **Convert PDFs**: PDFs are converted to Markdown via `pymupdf4llm` (preserving tables, structure, etc.)
-2. **Split Documents**: Break Markdown content into manageable chunks, respecting structural boundaries
+2. **Split Documents**: Two-stage smart chunking — first split by Markdown headers, then further split at paragraph/sentence boundaries using `langchain-text-splitters`
 3. **Create Embeddings**: Convert text chunks into numerical vectors using `qwen3-embedding:latest` via Ollama
 4. **Store Vectors**: Save embeddings and metadata in a searchable ChromaDB vector database
 
@@ -60,18 +60,43 @@ flowchart LR
 1. **Embed Question**: Convert your question into the same vector format
 2. **Find Similar**: Search database for chunks most similar to your question
 3. **Retrieve Context**: Get the most relevant text chunks with their metadata
-4. **Generate Answer**: Feed question + context to the LLM for a knowledgeable response
+4. **Resolve References**: Scan retrieved chunks for cross-references (e.g. "artikel 5", "bijlage A") and fetch the referenced sections
+5. **Generate Answer**: Feed question + context to the LLM for a knowledgeable response
 
 ### System Components
 
-| Component     | Purpose                        | Implementation                               |
-| ------------- | ------------------------------ | -------------------------------------------- |
-| **Indexer**   | Finds and converts PDF files   | `pymupdf4llm` → Markdown with page tracking  |
-| **Chunker**   | Splits documents intelligently | Smart Markdown-aware chunker                 |
-| **Embedder**  | Converts text to vectors       | `qwen3-embedding:latest` via Ollama          |
-| **Database**  | Stores and searches vectors    | ChromaDB with cosine similarity              |
-| **Generator** | Produces final answers         | `gpt-oss:latest` via Ollama (high reasoning) |
-| **Web UI**    | Browser-based chat + sources   | FastAPI + SSE streaming                      |
+| Component        | Purpose                        | Implementation                                                                         |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
+| **Indexer**      | Finds and converts PDF files   | `pymupdf4llm` → Markdown with page tracking                                            |
+| **Chunker**      | Splits documents intelligently | Two-stage: `MarkdownHeaderTextSplitter` + `RecursiveCharacterTextSplitter` (langchain) |
+| **Embedder**     | Converts text to vectors       | `qwen3-embedding:latest` via Ollama                                                    |
+| **Database**     | Stores and searches vectors    | ChromaDB with cosine similarity                                                        |
+| **Ref Resolver** | Follows cross-references       | Regex extraction + embedding lookup for referenced sections                            |
+| **Generator**    | Produces final answers         | `gpt-oss:latest` via Ollama (high reasoning)                                           |
+| **Web UI**       | Browser-based chat + sources   | FastAPI + SSE streaming                                                                |
+
+### Smart Chunking
+
+Documents are split using a two-stage pipeline from [`langchain-text-splitters`](https://python.langchain.com/docs/how_to/split_by_token/):
+
+1. **`MarkdownHeaderTextSplitter`** — splits at `#`, `##`, `###`, and `####` headers, keeping each header attached to its section so chunks never lose their heading context.
+2. **`RecursiveCharacterTextSplitter`** — further splits large sections using a priority hierarchy of separators:
+   - `\n\n` (paragraph boundaries)
+   - `\n` (line breaks)
+   - `. ` / `! ` / `? ` (sentence endings)
+   - `; ` / `, ` / ` ` (clauses and words)
+
+This means chunks break at the most meaningful boundary that fits within `CHUNK_SIZE`, and never cut mid-sentence unless a single sentence exceeds the limit. Overlap (`CHUNK_OVERLAP`) ensures continuity between adjacent chunks.
+
+### Reference Resolution
+
+Legal and HR documents often contain cross-references like _"conform artikel 5.1"_ or _"zie bijlage A"_. When the initial retrieval returns chunks that contain such references, the system automatically:
+
+1. **Extracts** reference phrases using regex patterns for Dutch and English terms (`artikel`, `hoofdstuk`, `bijlage`, `lid`, `paragraaf`, `art.`, `article`, `section`, `chapter`, `appendix`, `clause`, `annex`)
+2. **Embeds** each unique reference and queries the vector database for matching chunks
+3. **Deduplicates** and appends the referenced chunks to the context sent to the LLM
+
+This ensures the LLM sees both the chunk that _mentions_ a rule and the chunk that _defines_ it. Controlled via `RESOLVE_REFERENCES` in `src/.env`.
 
 ## Requirements
 
@@ -105,16 +130,17 @@ pip install -r requirements.txt
 
 All settings are managed via `src/.env`. Key options:
 
-| Variable                   | Default                  | Description                    |
-| -------------------------- | ------------------------ | ------------------------------ |
-| `EMBEDDINGS_MODEL_NAME`    | `qwen3-embedding:latest` | Ollama embedding model         |
-| `LLM_MODEL_NAME`           | `gpt-oss:latest`         | Ollama LLM model               |
-| `LLM_MAX_TOKENS`           | `32000`                  | Max tokens per response        |
-| `CHUNK_SIZE`               | `1500`                   | Target chunk size (chars)      |
-| `CHUNK_OVERLAP`            | `300`                    | Overlap between chunks (chars) |
-| `N_RESULTS`                | `15`                     | Number of chunks to retrieve   |
-| `SIMILARITY_THRESHOLD`     | `0.002`                  | Minimum similarity score       |
-| `CHROMA_PERSIST_DIRECTORY` | `chroma_db`              | Path to ChromaDB storage       |
+| Variable                   | Default                  | Description                     |
+| -------------------------- | ------------------------ | ------------------------------- |
+| `EMBEDDINGS_MODEL_NAME`    | `qwen3-embedding:latest` | Ollama embedding model          |
+| `LLM_MODEL_NAME`           | `gpt-oss:latest`         | Ollama LLM model                |
+| `LLM_MAX_TOKENS`           | `32000`                  | Max tokens per response         |
+| `CHUNK_SIZE`               | `1000`                   | Target chunk size (chars)       |
+| `CHUNK_OVERLAP`            | `200`                    | Overlap between chunks (chars)  |
+| `N_RESULTS`                | `8`                      | Number of chunks to retrieve    |
+| `SIMILARITY_THRESHOLD`     | `0.4`                    | Minimum cosine similarity (0–1) |
+| `RESOLVE_REFERENCES`       | `1`                      | Follow cross-references (0/1)   |
+| `CHROMA_PERSIST_DIRECTORY` | `chroma_db`              | Path to ChromaDB storage        |
 
 ## Usage
 
@@ -128,7 +154,7 @@ This will:
 
 - Find all `.pdf` files recursively in the directory
 - Convert each PDF to Markdown (preserving tables and structure)
-- Split the Markdown into overlapping chunks
+- Split the Markdown into context-aware chunks (headers, paragraphs, sentences)
 - Generate embeddings with `qwen3-embedding:latest`
 - Store everything in the local ChromaDB database
 

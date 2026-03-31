@@ -12,9 +12,10 @@ from pydantic import BaseModel
 from src.embeddings import EmbeddingGenerator
 from src.db_handler import ChromaDBHandler
 from src.generator import OllamaGenerator
+from src.reference_resolver import resolve_references
 from src.config import (
     N_RESULTS, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING,
-    LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT,
+    LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT, RESOLVE_REFERENCES,
 )
 
 app = FastAPI()
@@ -100,6 +101,16 @@ async def chat(request: ChatRequest):
                     )
 
             session["cached_contexts"] = contexts
+
+            # Resolve cross-references in retrieved chunks
+            if RESOLVE_REFERENCES and contexts:
+                contexts = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: resolve_references(
+                        contexts, embedding_generator, db_handler
+                    ),
+                )
+                session["cached_contexts"] = contexts
         else:
             contexts = [
                 {**ctx, "source_num": i + 1}
