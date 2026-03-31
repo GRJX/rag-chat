@@ -77,10 +77,10 @@ Filtered 9 results down to 3 high-quality matches
 
 **Filtering** then applies two checks to each candidate:
 
-| Filter                   | Setting                              | What it does                                            |
-| ------------------------ | ------------------------------------ | ------------------------------------------------------- |
-| **Similarity threshold** | `SIMILARITY_THRESHOLD` (default 0.7) | Drops chunks whose similarity score is below this value |
-| **Minimum chunk size**   | `MIN_CHUNK_SIZE` (default 50 chars)  | Drops chunks that are too short to be useful context    |
+| Filter                   | Setting                              | What it does                                                                                                                                                                             |
+| ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Similarity threshold** | `SIMILARITY_THRESHOLD` (default 0.7) | Drops chunks whose similarity score is below this value                                                                                                                                  |
+| **Minimum body text**    | `MIN_CHUNK_SIZE` (default 50 chars)  | Drops chunks whose body text (after stripping markdown headers and formatting) is too short — catches header-only chunks like `## 4 Huishoudelijk reglement` that have no actual content |
 
 In the example above, 9 candidates were fetched but only 3 had similarity ≥ 0.7 and length ≥ 50 characters. The remaining 6 were discarded before the LLM ever saw them — reducing noise and lowering hallucination risk.
 
@@ -101,13 +101,25 @@ In the example above, 9 candidates were fetched but only 3 had similarity ≥ 0.
 Documents are split using a two-stage pipeline from [`langchain-text-splitters`](https://python.langchain.com/docs/how_to/split_by_token/):
 
 1. **`MarkdownHeaderTextSplitter`** — splits at `#`, `##`, `###`, and `####` headers, keeping each header attached to its section so chunks never lose their heading context.
-2. **`RecursiveCharacterTextSplitter`** — further splits large sections using a priority hierarchy of separators:
+2. **Header-only merge** — sections that contain only a header with no meaningful body text (e.g. `## 4 Huishoudelijk reglement` with no following content) are automatically merged into the next section instead of becoming standalone chunks. The body text is evaluated after stripping all markdown formatting (`#`, `**`, `_`, etc.) so formatting-heavy headers can't inflate the character count.
+3. **`RecursiveCharacterTextSplitter`** — further splits large sections using a priority hierarchy of separators:
    - `\n\n` (paragraph boundaries)
    - `\n` (line breaks)
    - `. ` / `! ` / `? ` (sentence endings)
    - `; ` / `, ` / ` ` (clauses and words)
 
 This means chunks break at the most meaningful boundary that fits within `CHUNK_SIZE`, and never cut mid-sentence unless a single sentence exceeds the limit. Overlap (`CHUNK_OVERLAP`) ensures continuity between adjacent chunks.
+
+### Appendix / Attachment Protection
+
+Attachments and appendices (e.g. _Bijlage 2 — Bruikleenovereenkomst Notebook_) are treated as **atomic units** and are never split by the chunker. Without this, the header splitter would separate the attachment title from its content, producing a useless chunk like:
+
+> _## Bijlage 2 Bruikleenovereenkomst Notebook_
+> _Door ondertekening verklaart werknemer dat …_
+
+…with the actual terms and conditions in a different chunk, losing all context.
+
+The system detects headers matching appendix patterns (`bijlage`, `appendix`, `annex`, `attachment`, `aanhangsel`, `schedule`) and merges them with all subsequent sub-sections until the next top-level or same-level header. The merged appendix chunk is then **excluded** from the recursive text splitter so it stays intact regardless of size.
 
 ### Reference Resolution
 

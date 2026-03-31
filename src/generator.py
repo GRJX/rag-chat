@@ -47,17 +47,7 @@ class OllamaGenerator:
                 file_name = chunk['file_path'].split('/')[-1]
                 label = f"[{i}] {file_name}, lines {chunk['start_line']}-{chunk['end_line']}"
                 prompt_elements.append(f"{label}\n{chunk['content']}")
-            prompt_elements.append(
-                "STRICT INSTRUCTIONS:\n"
-                "- Answer using ONLY the SOURCES above. Do NOT use any outside knowledge.\n"
-                "- Quote or closely paraphrase the relevant text from the sources.\n"
-                "- Cite each claim with the source number, e.g. [1].\n"
-                "- Every factual statement in your answer MUST have a citation.\n"
-                "- If the sources do not contain the answer, respond ONLY with: "
-                f"'{self.no_answer_response}'\n"
-                "- Do NOT speculate, guess, or infer beyond what is explicitly stated.\n"
-                "- Do NOT make up facts, dates, numbers, or names."
-            )
+            prompt_elements.append(self.system_prompt)
         else:
             prompt_elements.append(
                 f"No source excerpts were retrieved for this question. "

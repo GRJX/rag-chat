@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -32,13 +33,14 @@ LLM_SYSTEM_PROMPT = os.getenv("LLM_SYSTEM_PROMPT", (
     "5. Never speculate, infer beyond what is written, or add information not present in the sources.\n"
     "6. If the question is ambiguous given the sources, state what is unclear and what the sources do say.\n"
     "7. Do not make up facts, dates, numbers, names, or any other details."
+    f"8. The date of today is {datetime.now().strftime('%Y-%m-%d')}. Use this if you need to reference the current date, but do not use any other outside information."
 ))
 
 # Indexing configuration
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1000))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 200))
 
-# ChromaDB configuration
+# ChromaDB configuration~
 CHROMA_PERSIST_DIRECTORY = os.getenv("CHROMA_PERSIST_DIRECTORY", "chroma_db")
 CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "code_collection")
 

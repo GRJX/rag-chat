@@ -251,10 +251,12 @@ class ChromaDBHandler:
                     print(f"{Colors.GREY}Filtered out result with similarity {similarity:.3f} (distance: {dist:.3f}) < {similarity_threshold}{Colors.ENDC}")
                     continue
             
-            # Apply minimum chunk size filter
+            # Apply minimum chunk size filter on body text (ignoring markdown headers/formatting)
             if min_chunk_size is not None:
-                if len(doc) < min_chunk_size:
-                    print(f"{Colors.GREY}Filtered out small chunk ({len(doc)} chars < {min_chunk_size}){Colors.ENDC}")
+                body = re.sub(r'^#{1,6}\s+.*$', '', doc, flags=re.MULTILINE)
+                body = re.sub(r'[_*#`>~]', '', body).strip()
+                if len(body) < min_chunk_size:
+                    print(f"{Colors.GREY}Filtered out header-only/small chunk ({len(body)} body chars < {min_chunk_size}): {doc[:80]}...{Colors.ENDC}")
                     continue
             
             filtered_docs.append(doc)

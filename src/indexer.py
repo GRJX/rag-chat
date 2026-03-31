@@ -5,6 +5,30 @@ import re
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from src.config import CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE, Colors
 
+# Pattern to detect appendix / attachment / reference headers that should not be split
+_APPENDIX_PATTERN = re.compile(
+    r'^#{1,4}\s+'                          # markdown header prefix
+    r'(?:bijlage|appendix|annex|annexe|'   # Dutch & English attachment terms
+    r'attachment|aanhangsel|schedule)\b',
+    re.IGNORECASE,
+)
+
+
+def _get_body_text(text: str) -> str:
+    """Strip markdown headers and formatting to get only the body text.
+    
+    Removes header lines (starting with #), bold/italic markers, and
+    excess whitespace. Used to check if a chunk has real content
+    beyond just a title.
+    """
+    # Remove markdown header lines
+    lines = text.strip().splitlines()
+    body_lines = [l for l in lines if not re.match(r'^#{1,6}\s', l.strip())]
+    body = '\n'.join(body_lines)
+    # Strip bold/italic markers and extra whitespace
+    body = re.sub(r'[_*#`>~]', '', body)
+    return body.strip()
+
 class Indexer:
     def __init__(self):
         self.chunk_size = CHUNK_SIZE
@@ -135,7 +159,9 @@ class Indexer:
         header_docs = self._header_splitter.split_text(clean_content)
 
         # Stage 1.5: Merge small sections into the next section so title pages
-        # and short header-only fragments don't become standalone chunks
+        # and short header-only fragments don't become standalone chunks.
+        # A section is considered "small" if either its total length is below
+        # MIN_CHUNK_SIZE or it has no meaningful body text (header-only).
         merged_docs = []
         carry = ""
         for doc in header_docs:
@@ -143,7 +169,8 @@ class Indexer:
             if carry:
                 text = carry + "\n\n" + text
                 carry = ""
-            if len(text.strip()) < MIN_CHUNK_SIZE:
+            body = _get_body_text(text)
+            if len(body) < MIN_CHUNK_SIZE:
                 carry = text
             else:
                 doc.page_content = text
@@ -155,8 +182,49 @@ class Indexer:
             from langchain_core.documents import Document
             merged_docs.append(Document(page_content=carry))
 
+        # Stage 1.75: Keep appendices / attachments as atomic units.
+        # When an appendix header is detected, merge it with all subsequent
+        # sections until the next appendix header (or another header of equal
+        # or higher level) so the attachment is never split.
+        appendix_merged_docs = []
+        i = 0
+        while i < len(merged_docs):
+            text = merged_docs[i].page_content
+            if _APPENDIX_PATTERN.match(text.strip()):
+                # Determine the header level of the appendix (number of #)
+                header_match = re.match(r'^(#{1,4})\s', text.strip())
+                appendix_level = len(header_match.group(1)) if header_match else 99
+                combined = text
+                j = i + 1
+                while j < len(merged_docs):
+                    next_text = merged_docs[j].page_content.strip()
+                    next_header = re.match(r'^(#{1,4})\s', next_text)
+                    if next_header:
+                        next_level = len(next_header.group(1))
+                        # Stop merging at a same-or-higher level header, or
+                        # another appendix header of the same level
+                        if next_level <= appendix_level:
+                            break
+                    combined += "\n\n" + merged_docs[j].page_content
+                    j += 1
+                merged_docs[i].page_content = combined
+                appendix_merged_docs.append(merged_docs[i])
+                print(f"{Colors.BLUE}Kept appendix as atomic chunk "
+                      f"({len(combined)} chars): "
+                      f"{text.strip()[:80]}...{Colors.ENDC}")
+                i = j
+            else:
+                appendix_merged_docs.append(merged_docs[i])
+                i += 1
+
         # Stage 2: Further split large sections at natural boundaries
-        final_docs = self._text_splitter.split_documents(merged_docs)
+        # but skip appendix chunks — they must stay intact.
+        final_docs = []
+        for doc in appendix_merged_docs:
+            if _APPENDIX_PATTERN.match(doc.page_content.strip()):
+                final_docs.append(doc)  # keep appendix whole
+            else:
+                final_docs.extend(self._text_splitter.split_documents([doc]))
 
         # Convert to expected chunk format with metadata
         chunks = []
