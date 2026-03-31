@@ -4,3 +4,4 @@ python-dotenv
 pymupdf4llm
 fastapi
 uvicorn
+langchain-text-splitters

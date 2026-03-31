@@ -1,9 +1,11 @@
+import re
 import ollama
 from typing import Dict, List, Generator, Any, Optional, Union
 
 from src.config import (LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_TEMPERATURE, 
                         LLM_TOP_P, LLM_TOP_K, LLM_PRESENCE_PENALTY, 
-                        LLM_FREQUENCY_PENALTY, LLM_SYSTEM_PROMPT)
+                        LLM_FREQUENCY_PENALTY, LLM_SYSTEM_PROMPT, LLM_SEED,
+                        NO_ANSWER_RESPONSE)
 
 
 class OllamaGenerator:
@@ -16,6 +18,8 @@ class OllamaGenerator:
         self.presence_penalty = LLM_PRESENCE_PENALTY
         self.frequency_penalty = LLM_FREQUENCY_PENALTY
         self.system_prompt = LLM_SYSTEM_PROMPT
+        self.seed = LLM_SEED
+        self.no_answer_response = NO_ANSWER_RESPONSE
         
     def construct_prompt(self, query: str, context_chunks: List[Dict[str, Any]], 
                          chat_history: Optional[List[Dict[str, str]]] = None, 
@@ -43,15 +47,12 @@ class OllamaGenerator:
                 file_name = chunk['file_path'].split('/')[-1]
                 label = f"[{i}] {file_name}, lines {chunk['start_line']}-{chunk['end_line']}"
                 prompt_elements.append(f"{label}\n{chunk['content']}")
-            prompt_elements.append(
-                "INSTRUCTIONS:\n"
-                "- Answer using only the sources above.\n"
-                "- Quote or closely paraphrase the relevant text.\n"
-                "- Cite each source with its number, e.g. [1].\n"
-                "- If the answer is not in the sources, say: 'I could not find this in the provided sources.'"
-            )
+            prompt_elements.append(self.system_prompt)
         else:
-            prompt_elements.append("No source excerpts were retrieved for this question.")
+            prompt_elements.append(
+                f"No source excerpts were retrieved for this question. "
+                f"Respond ONLY with: '{self.no_answer_response}'"
+            )
 
         # Chat history for follow-up context
         if chat_history:
@@ -87,6 +88,7 @@ class OllamaGenerator:
                 "top_k": self.top_k,
                 "presence_penalty": self.presence_penalty,
                 "frequency_penalty": self.frequency_penalty,
+                "seed": self.seed,
                 "reasoning_effort": "high",
             }
         }
@@ -96,3 +98,48 @@ class OllamaGenerator:
         else:
             response = ollama.generate(**params)
             return response['response']
+
+    def validate_response(self, response: str, num_sources: int) -> str:
+        """
+        Validate a generated response for hallucination signals.
+        If sources were provided but no citations appear in the response,
+        append a disclaimer warning. If no sources were available,
+        force the no-answer response.
+        
+        Args:
+            response: The generated response text.
+            num_sources: Number of source chunks that were provided.
+            
+        Returns:
+            The original or corrected response.
+        """
+        # If no sources were provided, force the standard refusal
+        if num_sources == 0:
+            return self.no_answer_response
+
+        # Check if the response already is the no-answer response
+        if self.no_answer_response.lower() in response.lower():
+            return response
+
+        # Verify citations are present when sources were provided
+        citation_pattern = re.compile(r'\[\d+\]')
+        has_citations = bool(citation_pattern.search(response))
+
+        if not has_citations:
+            return (
+                f"{response}\n\n"
+                f"**Note:** This response could not be verified against the provided sources. "
+                f"Please review the source documents directly."
+            )
+
+        # Verify cited source numbers are within range
+        cited_nums = {int(n) for n in re.findall(r'\[(\d+)\]', response)}
+        invalid_refs = {n for n in cited_nums if n < 1 or n > num_sources}
+        if invalid_refs:
+            return (
+                f"{response}\n\n"
+                f"**Note:** This response references sources {invalid_refs} which were not provided. "
+                f"Please verify the answer against the actual source documents."
+            )
+
+        return response

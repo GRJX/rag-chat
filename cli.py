@@ -6,7 +6,8 @@ from src.indexer import Indexer
 from src.embeddings import EmbeddingGenerator
 from src.db_handler import ChromaDBHandler
 from src.generator import OllamaGenerator
-from src.config import N_RESULTS, VERBOSE, Colors, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING
+from src.config import N_RESULTS, VERBOSE, Colors, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING, RESOLVE_REFERENCES
+from src.reference_resolver import resolve_references
 
 def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator: EmbeddingGenerator) -> None:
     indexer = Indexer()
@@ -154,6 +155,10 @@ def query_codebase(query: str, db_handler: ChromaDBHandler, embedding_generator:
                 })
         else:
             print(f"{Colors.YELLOW}No high-quality chunks found for the query. Try lowering SIMILARITY_THRESHOLD.{Colors.ENDC}")
+
+        # Resolve cross-references in retrieved chunks
+        if RESOLVE_REFERENCES and contexts:
+            contexts = resolve_references(contexts, embedding_generator, db_handler)
     else:
         print(f"{Colors.BLUE}Using cached contexts from initial query \"{initial_topic}\" (skipping RAG search)...{Colors.ENDC}")
 
