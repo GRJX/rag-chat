@@ -17,7 +17,7 @@ def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator:
     
     print(f"{Colors.BLUE}Traversing directory: {directory}{Colors.ENDC}")
     
-    # Process all PDF files
+    # Process all supported files
     for file_path, content in indexer.traverse_directory(directory):
         print(f"{Colors.BLUE}Processing file: {file_path}{Colors.ENDC}")
         chunks = indexer.chunk_data(file_path, content)
@@ -35,7 +35,8 @@ def index_data(directory: str, db_handler: ChromaDBHandler, embedding_generator:
             ids.append(chunk_id)
     
     if not documents:
-        print(f"{Colors.RED}No PDF files found in {directory}.{Colors.ENDC}")
+        supported_types = ", ".join(indexer.get_supported_file_types())
+        print(f"{Colors.RED}No supported files ({supported_types}) found in {directory}.{Colors.ENDC}")
         return
         
     print(f"{Colors.BLUE}Generating embeddings for {len(documents)} chunks...{Colors.ENDC}")

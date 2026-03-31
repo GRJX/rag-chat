@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+from typing import Optional
 
 import ollama
 from fastapi import FastAPI, Query
@@ -34,6 +35,7 @@ session: dict = {
 class ChatRequest(BaseModel):
     query: str
     reset: bool = False
+    collection: Optional[str] = None
 
 
 @app.get("/")
@@ -45,6 +47,10 @@ async def index():
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     async def event_stream():
+        # Handle collection switching if requested
+        if request.collection:
+            db_handler.switch_collection(request.collection)
+
         is_followup = (
             not request.reset
             and session["initial_topic"] is not None
@@ -142,4 +148,13 @@ async def reset_session():
 @app.get("/api/open-pdf")
 async def open_pdf(path: str = Query(...)):
     subprocess.Popen(["open", path])
+
+
+@app.get("/api/file")
+async def get_file_content(path: str = Query(...)):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {"content": f.read()}
+    except Exception as e:
+        return {"error": str(e)}, 404
     return {"status": "ok"}

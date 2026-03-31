@@ -10,18 +10,45 @@ class Indexer:
         self.chunk_overlap = CHUNK_OVERLAP
 
     def get_supported_file_types(self) -> List[str]:
-        return ['.pdf']
+        return ['.pdf', '.md']
 
     def traverse_directory(self, directory: str) -> Generator[Tuple[str, str], None, None]:
         directory_path = Path(directory)
-        for file_path in directory_path.rglob('*.pdf'):
-            try:
-                content = self._read_pdf_file(file_path)
-                if content:
-                    yield str(file_path), content
-            except Exception as e:
-                print(f"{Colors.RED}Error reading file {file_path}: {e}{Colors.ENDC}")
+        supported_extensions = self.get_supported_file_types()
+        
+        # Collect all files first to provide accurate progress information
+        for file_path in directory_path.rglob('*'):
+            if file_path.suffix.lower() in supported_extensions:
+                try:
+                    ext = file_path.suffix.lower()
+                    if ext == '.pdf':
+                        content = self._read_pdf_file(file_path)
+                    elif ext == '.md':
+                        content = self._read_text_file(file_path)
+                    else:
+                        continue
+                        
+                    if content:
+                        yield str(file_path), content
+                except Exception as e:
+                    print(f"{Colors.RED}Error reading file {file_path}: {e}{Colors.ENDC}")
     
+    def _read_text_file(self, file_path: Path) -> str:
+        """
+        Read content from a text-based file (e.g., Markdown).
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            The file content as string
+        """
+        try:
+            return file_path.read_text(encoding='utf-8')
+        except Exception as e:
+            print(f"{Colors.RED}Error reading text file {file_path}: {e}{Colors.ENDC}")
+            return ""
+
     def _read_pdf_file(self, file_path: Path) -> str:
         """
         Extract text content from a PDF file and convert it to Markdown

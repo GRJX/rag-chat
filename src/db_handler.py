@@ -10,24 +10,27 @@ class ChromaDBHandler:
         Initialize the ChromaDB handler using environment configuration.
         """
         self.client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIRECTORY)
+        self.switch_collection(CHROMA_COLLECTION_NAME)
+
+    def switch_collection(self, collection_name: str) -> None:
+        """
+        Switch to a different collection.
         
-        # Create or get the collection
+        Args:
+            collection_name: The name of the collection to switch to
+        """
         try:
-            self.collection = self.client.get_collection(name=CHROMA_COLLECTION_NAME)
-            print(f"{Colors.GREEN}Using existing collection: {CHROMA_COLLECTION_NAME}{Colors.ENDC}")
-            
-            # Try to determine the distance function being used
+            self.collection = self.client.get_collection(name=collection_name)
+            print(f"{Colors.GREEN}Switched to existing collection: {collection_name}{Colors.ENDC}")
             self._detect_distance_function()
-            
         except:
-            print(f"{Colors.BLUE}Creating new collection: {CHROMA_COLLECTION_NAME}{Colors.ENDC}")
-            # Create collection with explicit distance function (cosine similarity)
+            print(f"{Colors.BLUE}Creating new collection: {collection_name}{Colors.ENDC}")
             self.collection = self.client.create_collection(
-                name=CHROMA_COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"}  # Use cosine distance
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"}
             )
             self.distance_function = "cosine"
-            print(f"{Colors.BLUE}Created collection with cosine distance function{Colors.ENDC}")
+            print(f"{Colors.BLUE}Created collection {collection_name} with cosine distance function{Colors.ENDC}")
 
     def _detect_distance_function(self):
         """Detect which distance function the collection is using."""
