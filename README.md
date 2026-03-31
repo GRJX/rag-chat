@@ -58,10 +58,31 @@ flowchart TD
 #### **Phase 2: Querying (Every Question)**
 
 1. **Embed Question**: Convert your question into the same vector format
-2. **Find Similar**: Search database for chunks most similar to your question
-3. **Retrieve Context**: Get the most relevant text chunks with their metadata
-4. **Resolve References**: Scan retrieved chunks for cross-references (e.g. "artikel 5", "bijlage A") and fetch the referenced sections
-5. **Generate Answer**: Feed question + context to the LLM for a knowledgeable response
+2. **Find Similar**: Search database for chunks most similar to your question (over-fetches 3× to allow filtering)
+3. **Filter & Rank**: Apply similarity threshold and minimum chunk size filters to keep only high-quality matches
+4. **Retrieve Context**: Get the most relevant text chunks with their metadata
+5. **Resolve References**: Scan retrieved chunks for cross-references (e.g. "artikel 5", "bijlage A") and fetch the referenced sections
+6. **Generate Answer**: Feed question + context to the LLM for a grounded, cited response
+
+### Retrieval Filtering
+
+The system deliberately **over-fetches** candidates from ChromaDB (up to `N_RESULTS × 3`) and then filters them down, so only high-quality context reaches the LLM. You'll see log lines like:
+
+```
+Distance stats - Min: 0.381, Max: 0.492, Avg: 0.443, Function: cosine
+Filtered 9 results down to 3 high-quality matches
+```
+
+**Distance stats** show the raw cosine distances of all initial candidates. Cosine distance ranges from 0 (identical) to 2 (opposite); lower is better. These are converted to a similarity score (1 − distance/2), so a distance of 0.381 ≈ 81% similarity.
+
+**Filtering** then applies two checks to each candidate:
+
+| Filter                   | Setting                              | What it does                                            |
+| ------------------------ | ------------------------------------ | ------------------------------------------------------- |
+| **Similarity threshold** | `SIMILARITY_THRESHOLD` (default 0.7) | Drops chunks whose similarity score is below this value |
+| **Minimum chunk size**   | `MIN_CHUNK_SIZE` (default 50 chars)  | Drops chunks that are too short to be useful context    |
+
+In the example above, 9 candidates were fetched but only 3 had similarity ≥ 0.7 and length ≥ 50 characters. The remaining 6 were discarded before the LLM ever saw them — reducing noise and lowering hallucination risk.
 
 ### System Components
 
@@ -72,7 +93,7 @@ flowchart TD
 | **Embedder**     | Converts text to vectors       | `qwen3-embedding:latest` via Ollama                                                    |
 | **Database**     | Stores and searches vectors    | ChromaDB with cosine similarity                                                        |
 | **Ref Resolver** | Follows cross-references       | Regex extraction + embedding lookup for referenced sections                            |
-| **Generator**    | Produces final answers         | `gpt-oss:latest` via Ollama (high reasoning)                                           |
+| **Generator**    | Produces final answers         | `gpt-oss:latest` via Ollama (high reasoning) + hallucination guardrails                |
 | **Web UI**       | Browser-based chat + sources   | FastAPI + SSE streaming                                                                |
 
 ### Smart Chunking
@@ -97,6 +118,32 @@ Legal and HR documents often contain cross-references like _"conform artikel 5.1
 3. **Deduplicates** and appends the referenced chunks to the context sent to the LLM
 
 This ensures the LLM sees both the chunk that _mentions_ a rule and the chunk that _defines_ it. Controlled via `RESOLVE_REFERENCES` in `src/.env`.
+
+### Hallucination Guardrails
+
+The system includes multiple layers of protection against hallucination and inconsistent output:
+
+| Layer                               | Mechanism                                       | Description                                                                                                                         |
+| ----------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Deterministic generation**        | `temperature=0.0`, fixed `seed=42`              | Eliminates randomness — the same query + context always produces the same answer                                                    |
+| **Strict system prompt**            | 7 explicit rules in the system message          | Forbids speculation, demands citations, enforces source-only answers                                                                |
+| **Hardened in-prompt instructions** | "STRICT INSTRUCTIONS" block in every prompt     | Requires a citation `[n]` on every factual claim; forces refusal when sources are missing                                           |
+| **Confidence gate**                 | `CONFIDENCE_THRESHOLD` check before generation  | If no retrieved chunk scores above the threshold, the LLM is never called — a standard refusal is returned immediately              |
+| **Post-generation validation**      | `validate_response()` after streaming completes | Detects missing citations and invalid source references (e.g. `[7]` when only 3 sources exist), appending a verification disclaimer |
+| **No-context refusal**              | Forced when zero chunks are retrieved           | Returns `NO_ANSWER_RESPONSE` without invoking the model                                                                             |
+
+When the system cannot confidently answer a question, it responds with:
+
+> _I could not find this in the provided sources._
+
+Guardrail settings in `src/.env`:
+
+| Variable               | Default                                          | Description                                |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------ |
+| `LLM_TEMPERATURE`      | `0.0`                                            | Generation temperature (0 = deterministic) |
+| `LLM_SEED`             | `42`                                             | Fixed seed for reproducible output         |
+| `CONFIDENCE_THRESHOLD` | `0.4`                                            | Minimum similarity to attempt answering    |
+| `NO_ANSWER_RESPONSE`   | `I could not find this in the provided sources.` | Standard refusal message                   |
 
 ## Requirements
 
@@ -130,17 +177,20 @@ pip install -r requirements.txt
 
 All settings are managed via `src/.env`. Key options:
 
-| Variable                   | Default                  | Description                     |
-| -------------------------- | ------------------------ | ------------------------------- |
-| `EMBEDDINGS_MODEL_NAME`    | `qwen3-embedding:latest` | Ollama embedding model          |
-| `LLM_MODEL_NAME`           | `gpt-oss:latest`         | Ollama LLM model                |
-| `LLM_MAX_TOKENS`           | `32000`                  | Max tokens per response         |
-| `CHUNK_SIZE`               | `1000`                   | Target chunk size (chars)       |
-| `CHUNK_OVERLAP`            | `200`                    | Overlap between chunks (chars)  |
-| `N_RESULTS`                | `8`                      | Number of chunks to retrieve    |
-| `SIMILARITY_THRESHOLD`     | `0.4`                    | Minimum cosine similarity (0–1) |
-| `RESOLVE_REFERENCES`       | `1`                      | Follow cross-references (0/1)   |
-| `CHROMA_PERSIST_DIRECTORY` | `chroma_db`              | Path to ChromaDB storage        |
+| Variable                   | Default                  | Description                                |
+| -------------------------- | ------------------------ | ------------------------------------------ |
+| `EMBEDDINGS_MODEL_NAME`    | `qwen3-embedding:latest` | Ollama embedding model                     |
+| `LLM_MODEL_NAME`           | `gpt-oss:latest`         | Ollama LLM model                           |
+| `LLM_MAX_TOKENS`           | `32000`                  | Max tokens per response                    |
+| `LLM_TEMPERATURE`          | `0.0`                    | Generation temperature (0 = deterministic) |
+| `LLM_SEED`                 | `42`                     | Fixed seed for reproducible output         |
+| `CHUNK_SIZE`               | `1000`                   | Target chunk size (chars)                  |
+| `CHUNK_OVERLAP`            | `200`                    | Overlap between chunks (chars)             |
+| `N_RESULTS`                | `8`                      | Number of chunks to retrieve               |
+| `SIMILARITY_THRESHOLD`     | `0.4`                    | Minimum cosine similarity (0–1)            |
+| `CONFIDENCE_THRESHOLD`     | `0.4`                    | Min similarity to attempt answering        |
+| `RESOLVE_REFERENCES`       | `1`                      | Follow cross-references (0/1)              |
+| `CHROMA_PERSIST_DIRECTORY` | `chroma_db`              | Path to ChromaDB storage                   |
 
 ## Usage
 

@@ -16,6 +16,8 @@ from src.reference_resolver import resolve_references
 from src.config import (
     N_RESULTS, SIMILARITY_THRESHOLD, MIN_CHUNK_SIZE, ENABLE_RERANKING,
     LLM_MODEL_NAME, LLM_MAX_TOKENS, LLM_SYSTEM_PROMPT, RESOLVE_REFERENCES,
+    LLM_TEMPERATURE, LLM_TOP_P, LLM_TOP_K, LLM_PRESENCE_PENALTY,
+    LLM_FREQUENCY_PENALTY, LLM_SEED, CONFIDENCE_THRESHOLD, NO_ANSWER_RESPONSE,
 )
 
 app = FastAPI()
@@ -119,6 +121,15 @@ async def chat(request: ChatRequest):
 
         yield f"event: contexts\ndata: {json.dumps(contexts)}\n\n"
 
+        # Confidence gate: if no contexts have sufficient similarity, refuse to answer
+        if not contexts or all(c.get("similarity", 0) < CONFIDENCE_THRESHOLD for c in contexts):
+            refusal = NO_ANSWER_RESPONSE
+            yield f"event: token\ndata: {json.dumps(refusal)}\n\n"
+            session["chat_history"].append({"role": "user", "content": request.query})
+            session["chat_history"].append({"role": "assistant", "content": refusal})
+            yield "event: done\ndata: {}\n\n"
+            return
+
         prompt = generator.construct_prompt(
             request.query,
             contexts,
@@ -132,13 +143,30 @@ async def chat(request: ChatRequest):
             prompt=prompt,
             system=LLM_SYSTEM_PROMPT,
             stream=True,
-            options={"num_predict": LLM_MAX_TOKENS, "reasoning_effort": "high"},
+            options={
+                "num_predict": LLM_MAX_TOKENS,
+                "temperature": LLM_TEMPERATURE,
+                "top_p": LLM_TOP_P,
+                "top_k": LLM_TOP_K,
+                "presence_penalty": LLM_PRESENCE_PENALTY,
+                "frequency_penalty": LLM_FREQUENCY_PENALTY,
+                "seed": LLM_SEED,
+                "reasoning_effort": "high",
+            },
         )
         async for chunk in response_gen:
             token = chunk.get("response", "")
             if token:
                 full_response += token
                 yield f"event: token\ndata: {json.dumps(token)}\n\n"
+
+        # Post-generation guardrail: validate citations
+        validated = generator.validate_response(full_response, len(contexts))
+        if validated != full_response:
+            # Send the appended disclaimer as an extra token
+            disclaimer = validated[len(full_response):]
+            yield f"event: token\ndata: {json.dumps(disclaimer)}\n\n"
+            full_response = validated
 
         session["chat_history"].append({"role": "user", "content": request.query})
         session["chat_history"].append({"role": "assistant", "content": full_response})
